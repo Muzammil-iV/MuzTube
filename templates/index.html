@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MuzTube - Video Downloader</title>
+
+<style>
+:root{
+  --primary:#1a73e8;
+  --bg:#f5f6f7;
+  --card:#fff;
+  --text:#202124;
+  --border:#dadce0;
+  --radius:12px;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background:var(--bg);
+  padding:10px;
+}
+
+.app{
+  max-width:650px;
+  margin:auto;
+  background:var(--card);
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  overflow:hidden;
+}
+
+.header{
+  text-align:center;
+  padding:10px;
+  font-weight:700;
+  border-bottom:1px solid var(--border);
+}
+
+.section{
+  padding:10px;
+  border-bottom:1px solid var(--border);
+}
+
+label{
+  font-size:12px;
+  font-weight:600;
+}
+
+/* layout */
+.row{display:flex;gap:6px}
+.col{flex:1}
+
+/* URL input */
+.url-wrap{position:relative}
+.url-wrap input{padding-right:36px}
+.clear-btn{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  cursor:pointer;
+  color:#666;
+  font-size:16px;
+}
+
+/* inputs */
+input,select{
+  width:100%;
+  padding:8px;
+  font-size:13px;
+  margin-top:4px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  font-family:inherit;
+}
+
+/* type selector */
+.type{display:flex;gap:6px}
+.type div{
+  flex:1;
+  text-align:center;
+  padding:8px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  cursor:pointer;
+}
+.type .active{
+  background:#e8f0fe;
+  border-color:var(--primary);
+  font-weight:700;
+}
+
+button{
+  width:100%;
+  padding:10px;
+  font-weight:700;
+  border:none;
+  border-radius:8px;
+  background:var(--primary);
+  color:#fff;
+  font-family:inherit;
+}
+
+/* Progress */
+#progressSection{display:none}
+.progress-bar{
+  width:100%;
+  height:6px;
+  background:#e0e0e0;
+  border-radius:3px;
+  overflow:hidden;
+  margin-top:8px;
+}
+.progress-fill{
+  height:100%;
+  background:var(--primary);
+  border-radius:3px;
+  width:0%;
+  transition:width 0.3s;
+}
+.progress-info{
+  display:flex;
+  justify-content:space-between;
+  font-size:11px;
+  color:#666;
+  margin-top:4px;
+}
+
+#statusMsg{
+  text-align:center;
+  font-size:12px;
+  font-weight:600;
+  margin-top:4px;
+  display:none;
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<div class="header">🎬 MuzTube - Video Downloader</div>
+
+<!-- URL -->
+<div class="section">
+<label>🔗 URL</label>
+<div class="url-wrap">
+<input id="url" placeholder="Enter or Paste your Link...">
+<span class="clear-btn" onclick="document.getElementById('url').value=''">✕</span>
+</div>
+</div>
+
+<!-- TYPE -->
+<div class="section">
+<div class="type">
+<div class="active" data-t="video">🎬 Video</div>
+<div data-t="audio">🎧 Audio</div>
+</div>
+</div>
+
+<!-- QUALITY + FORMAT -->
+<div class="section">
+<div class="row">
+  <div class="col">
+    <label>⚙️ Quality</label>
+    <select id="quality"></select>
+  </div>
+  <div class="col">
+    <label>📦 Format</label>
+    <select id="format"></select>
+  </div>
+</div>
+</div>
+
+<!-- PROGRESS -->
+<div class="section" id="progressSection">
+<label>📥 Download Progress</label>
+<div class="progress-bar">
+  <div class="progress-fill" id="progressFill"></div>
+</div>
+<div class="progress-info">
+  <span id="progressPercent">0%</span>
+  <span id="progressSpeed">-</span>
+  <span id="progressETA">-</span>
+</div>
+<div id="statusMsg"></div>
+</div>
+
+<!-- BUTTON -->
+<div class="section">
+<button id="downloadBtn" onclick="startDownload()">🚀 Download Now</button>
+<button id="saveBtn" onclick="saveFile()" style="background:#0d904f;display:none;margin-top:6px">💾 Save File</button>
+</div>
+
+</div>
+
+<script>
+const vQ=["best","2160","1440","1080","720","480","360"];
+const aQ=["best","320","256","192","128"];
+const vF=["mp4","mkv","webm"];
+const aF=["mp3","m4a","opus","wav"];
+let type="video";
+let currentDownloadId=null;
+let progressInterval=null;
+
+function fill(){
+  quality.innerHTML=""; format.innerHTML="";
+  if(type==="video"){
+    vQ.forEach(x=>quality.innerHTML+=`<option>${x}</option>`);
+    vF.forEach(x=>format.innerHTML+=`<option>${x}</option>`);
+  }else{
+    aQ.forEach(x=>quality.innerHTML+=`<option>${x}</option>`);
+    aF.forEach(x=>format.innerHTML+=`<option>${x}</option>`);
+  }
+}
+fill();
+
+document.querySelectorAll(".type div").forEach(d=>{
+  d.onclick=()=>{
+    document.querySelectorAll(".type div").forEach(x=>x.classList.remove("active"));
+    d.classList.add("active");
+    type=d.dataset.t;
+    fill();
+  };
+});
+
+async function startDownload(){
+  const url=document.getElementById("url").value.trim();
+  if(!url){showStatus("❌ Please enter a URL","#d93025");return;}
+
+  document.getElementById("downloadBtn").disabled=true;
+  document.getElementById("downloadBtn").textContent="⏳ Downloading...";
+  document.getElementById("saveBtn").style.display="none";
+  document.getElementById("progressSection").style.display="block";
+  document.getElementById("progressFill").style.width="0%";
+  document.getElementById("progressPercent").textContent="0%";
+  document.getElementById("progressSpeed").textContent="-";
+  document.getElementById("progressETA").textContent="-";
+  showStatus("Starting...","#333");
+
+  try{
+    const q=quality.value;
+    const f=format.value;
+    
+    let formatStr;
+    if(type==="audio"){
+      formatStr=q==="best"?"bestaudio/best":"bestaudio[abr<="+q+"]/best";
+    }else{
+      formatStr=q==="best"?"bestvideo+bestaudio/best":"bv*[height<="+q+"]+ba/best";
+    }
+
+    const res=await fetch("/api/download",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:url,format_id:formatStr})
+    });
+    const data=await res.json();
+
+    if(data.success){
+      currentDownloadId=data.download_id;
+      startProgressTracking();
+    }else{
+      showStatus("❌ "+(data.error||"Download failed"),"#d93025");
+      resetBtn();
+    }
+  }catch(e){
+    showStatus("❌ Network error. Try again.","#d93025");
+    resetBtn();
+  }
+}
+
+function startProgressTracking(){
+  if(progressInterval)clearInterval(progressInterval);
+  progressInterval=setInterval(async()=>{
+    try{
+      const res=await fetch("/api/progress/"+currentDownloadId);
+      const data=await res.json();
+
+      document.getElementById("progressFill").style.width=data.progress+"%";
+      document.getElementById("progressPercent").textContent=Math.round(data.progress)+"%";
+      if(data.speed)document.getElementById("progressSpeed").textContent=data.speed;
+      if(data.eta)document.getElementById("progressETA").textContent=data.eta;
+
+      if(data.status==="completed"){
+        clearInterval(progressInterval);
+        document.getElementById("downloadBtn").textContent="✅ Complete!";
+        document.getElementById("saveBtn").style.display="block";
+        showStatus("✅ Download finished! Click Save.","#0d904f");
+      }else if(data.status==="error"){
+        clearInterval(progressInterval);
+        showStatus("❌ "+(data.error||"Download failed"),"#d93025");
+        resetBtn();
+      }
+    }catch(e){}
+  },300);
+}
+
+function saveFile(){
+  if(currentDownloadId)window.location.href="/api/download-file/"+currentDownloadId;
+}
+
+function resetBtn(){
+  document.getElementById("downloadBtn").disabled=false;
+  document.getElementById("downloadBtn").textContent="🚀 Download Now";
+}
+
+function showStatus(msg,color){
+  const s=document.getElementById("statusMsg");
+  s.textContent=msg;
+  s.style.color=color;
+  s.style.display="block";
+}
+</script>
+
+</body>
+  </html>
